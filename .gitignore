@@ -2,9 +2,12 @@
 .cache/
 __pycache__/
 .pytest_cache/
+.pytest-tmp/
 .ruff_cache/
 .superpowers/
+.worktrees/
 *.py[cod]
+data/*.duckdb*
 data/raw/*
 data/normalized/*
 data/features/*

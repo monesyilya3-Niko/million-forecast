@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "football-model"
+version = "0.7.2"
+description = "Local visual football probability analysis application"
+requires-python = ">=3.13"
+dependencies = [
+  "duckdb>=1.5",
+  "httpx>=0.28",
+  "numpy>=2.5",
+  "openpyxl>=3.1",
+  "optuna>=4.9",
+  "pandas>=3.0",
+  "plotly>=6.8",
+  "polars>=1.42",
+  "pyarrow>=24",
+  "pydantic>=2.13",
+  "scikit-learn>=1.9",
+  "scipy>=1.18",
+  "statsmodels>=0.14",
+  "streamlit>=1.58",
+  "tenacity>=9.1",
+  "xgboost>=3.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.1", "ruff>=0.15"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "--basetemp=.pytest-tmp"
+
+[tool.ruff]
+line-length = 150
+target-version = "py313"
