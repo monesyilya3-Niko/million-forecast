@@ -1,0 +1,16 @@
+.venv/
+.cache/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.superpowers/
+*.py[cod]
+data/raw/*
+data/normalized/*
+data/features/*
+data/predictions/*
+artifacts/*
+reports/*
+!data/**/.gitkeep
+!artifacts/.gitkeep
+!reports/.gitkeep
