@@ -249,7 +249,6 @@ def _live_panel(live_service: SportteryLiveService) -> None:
                 from football_model.ui.navigation import navigate_to
                 navigate_to("📄 比赛详情", context={"detail_match_id": match_id})
         with b2:
-            analysis_disabled = not all(_is_value(_row_get(match, col)) for col in ["had_h", "had_d", "had_a"])
-            if st.button("🔍 分析", key=f"live-analysis-{match_id}", disabled=analysis_disabled):
+            if st.button("🔍 分析", key=f"live-analysis-{match_id}"):
                 _open_analysis(match_id)
                 st.rerun(scope="app")
