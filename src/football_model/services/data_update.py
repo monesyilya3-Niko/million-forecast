@@ -1,7 +1,7 @@
 """Automated data update service.
 
-Fetches lineups, injuries, match results, and team profiles
-from free data sources (ESPN, football-data.co.uk).
+Fetches lineups, injuries, match results, standings, and team profiles
+from free data sources (ESPN, Football-Data.org, API-Football).
 Runs on schedule to keep data fresh.
 """
 
@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
-
 from football_model.data import LocalDatabase
 from football_model.data.adapters.espn import ESPNAdapter, ESPN_LEAGUES
+from football_model.data.adapters.football_data_org import FootballDataOrgAdapter
+from football_model.data.adapters.api_football import APIFootballAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +24,17 @@ class DataUpdateService:
     def __init__(self, database: LocalDatabase) -> None:
         self.database = database
         self.espn = ESPNAdapter()
+        self.fdorg = FootballDataOrgAdapter()
+        self.api_football = APIFootballAdapter()
 
     def update_all(self) -> dict[str, int]:
         """Run all updates. Returns counts of updated items."""
         results = {
             "lineups_updated": 0,
             "results_updated": 0,
+            "standings_updated": 0,
             "profiles_updated": 0,
+            "injuries_updated": 0,
         }
 
         try:
@@ -43,9 +48,19 @@ class DataUpdateService:
             logger.warning("Results update failed: %s", e)
 
         try:
+            results["standings_updated"] = self.update_standings()
+        except Exception as e:
+            logger.warning("Standings update failed: %s", e)
+
+        try:
             results["profiles_updated"] = self.update_team_profiles()
         except Exception as e:
             logger.warning("Profile update failed: %s", e)
+
+        try:
+            results["injuries_updated"] = self.update_injuries()
+        except Exception as e:
+            logger.warning("Injury update failed: %s", e)
 
         return results
 
@@ -174,3 +189,63 @@ class DataUpdateService:
                  confirmed, players_json, captured_at)
                 VALUES (?, 0, ?, TRUE, NULL, TRUE, ?, ?)
             """, [match_id, team_side, players_json, captured_at])
+
+    def update_standings(self) -> int:
+        """Fetch and store league standings from Football-Data.org."""
+        count = 0
+        for league_name in ["英格兰超级联赛", "西班牙甲级联赛", "意大利甲级联赛", "德国甲级联赛", "法国甲级联赛"]:
+            try:
+                standings = self.fdorg.get_standings(league_name)
+                for s in standings:
+                    with self.database.connection() as conn:
+                        conn.execute("""
+                            INSERT OR REPLACE INTO team_profiles
+                            (team_name, league, ranking, points, goals_for, goals_against,
+                             xg_for, xg_against, home_strength, away_strength,
+                             form_last_5, form_last_10, elo_rating, last_update)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, CURRENT_TIMESTAMP)
+                        """, [
+                            s.team_name, league_name, s.position, s.points,
+                            s.goals_for, s.goals_against,
+                            s.goals_for / max(s.played, 1), s.goals_against / max(s.played, 1),
+                            s.won / max(s.played, 1), s.lost / max(s.played, 1),
+                            s.form[-5:] if s.form else None,
+                            s.form[-10:] if s.form else None,
+                        ])
+                    count += 1
+            except Exception as e:
+                logger.debug("Standings update failed for %s: %s", league_name, e)
+        return count
+
+    def update_injuries(self) -> int:
+        """Fetch and store injury data from API-Football."""
+        if not self.api_football.enabled:
+            return 0
+
+        count = 0
+        with self.database.connection(read_only=True) as conn:
+            teams = conn.execute("""
+                SELECT DISTINCT home_team FROM sporttery_matches
+                WHERE kickoff >= CURRENT_DATE - INTERVAL '7' DAY
+                LIMIT 20
+            """).fetchall()
+
+        for (team_name,) in teams:
+            try:
+                injuries = self.api_football.get_injuries(team_name)
+                for inj in injuries:
+                    with self.database.connection() as conn:
+                        conn.execute("""
+                            INSERT INTO injury_snapshots
+                            (match_id, team_side, captured_at, injuries_json)
+                            VALUES (?, 'unknown', CURRENT_TIMESTAMP, ?)
+                        """, [team_name, str([{
+                            "player": inj.player_name,
+                            "type": inj.injury_type,
+                            "reason": inj.reason,
+                            "status": inj.status,
+                        }])])
+                    count += 1
+            except Exception as e:
+                logger.debug("Injury update failed for %s: %s", team_name, e)
+        return count
