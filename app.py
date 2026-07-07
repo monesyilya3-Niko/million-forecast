@@ -59,6 +59,20 @@ analysis_service = AnalysisService()
 sporttery_live_service = SportteryLiveService(database)
 ensemble_service = EnsembleAnalysisService(database, settings)
 
+# ── Auto-fetch data on first run (Hugging Face Spaces) ──────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def _auto_fetch_data():
+    """Auto-fetch sporttery data if database is empty."""
+    try:
+        with database.connection(read_only=True) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM sporttery_matches").fetchone()[0]
+        if count == 0:
+            sporttery_live_service.refresh()
+    except Exception:
+        pass
+
+_auto_fetch_data()
+
 # ── Page Registry ────────────────────────────────────────────────
 SECTIONS = {
     "实时中心": {
