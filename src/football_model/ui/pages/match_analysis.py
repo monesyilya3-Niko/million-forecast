@@ -381,34 +381,38 @@ def render_match_analysis(
     headline, explanation = _verdict(summary.probabilities, comparison, confidence)
 
     # ── Top-level insight cards ──
-    section_header("核心结论区", "先看模型倾向、可信度、预期进球和主要风险。", f"模型结构：{component_text}")
+    section_header("核心结论区 / Key Insights", "先看模型倾向、可信度、预期进球和主要风险。", f"模型结构：{component_text}")
     s1, s2, s3, s4, s5, s6 = st.columns(6)
     leader = max(summary.probabilities, key=summary.probabilities.get)
     top_score, top_score_prob = summary.top_scores[0]
     max_gap_row = comparison.loc[comparison["概率差"].abs().idxmax()] if "概率差" in comparison.columns and not comparison.empty else None
     max_gap_text = f"{max_gap_row['结果']} {max_gap_row['概率差']:+.1%}" if max_gap_row is not None else "-"
     with s1:
-        metric_card("可信度", f"{confidence}/100", delta=quality, variant="positive" if confidence >= 75 else "warning" if confidence >= 55 else "danger")
+        metric_card("可信度 / Confidence", f"{confidence}/100", delta=quality, variant="positive" if confidence >= 75 else "warning" if confidence >= 55 else "danger")
     with s2:
-        metric_card("模型倾向", leader, variant="info")
+        metric_card("模型倾向 / Model Lean", leader, variant="info")
     with s3:
-        metric_card("预期进球", f"{sum(ensemble_xg):.2f}", delta=f"{ensemble_xg[0]:.2f} : {ensemble_xg[1]:.2f}", variant="purple")
+        metric_card("预期进球 / Expected Goals", f"{sum(ensemble_xg):.2f}", delta=f"{ensemble_xg[0]:.2f} : {ensemble_xg[1]:.2f}", variant="purple")
     with s4:
-        metric_card("首选比分", top_score.replace(":", "–"), delta=f"{top_score_prob:.1%}", variant="info")
+        metric_card("首选比分 / Top Score", top_score.replace(":", "–"), delta=f"{top_score_prob:.1%}", variant="info")
     with s5:
-        metric_card("最大分歧", max_gap_text, variant="warning")
+        metric_card("最大分歧 / Max Gap", max_gap_text, variant="warning")
     with s6:
-        metric_card("风险数量", str(len(risks)), variant="danger" if risks else "positive")
-    render_confidence_meter(confidence, "报告可信度")
+        metric_card("风险数量 / Risks", str(len(risks)), variant="danger" if risks else "positive")
+    render_confidence_meter(confidence, "报告可信度 / Report Confidence")
     render_risk_note("；".join(risks) if risks else "当前未发现显著的数据完整性或模型分歧风险，但结论仍应按概率信号理解。")
 
     # ── Tabs ──
-    verdict_tab, model_tab, market_tab, form_tab, prev_tab, lineup_tab, tactical_tab, data_tab = st.tabs(
-        ["核心结论", "概率模型", "赔率市场", "球队状态", "上场复盘", "首发伤停", "技战术解读", "数据质量"]
-    )
-
-    # Alias for backward compatibility
-    score_tab = model_tab  # Score heatmap goes in model tab now
+    verdict_tab, model_tab, market_tab, form_tab, prev_tab, lineup_tab, tactical_tab, data_tab = st.tabs([
+        "核心结论 / Verdict",
+        "概率模型 / Probability",
+        "赔率市场 / Odds Market",
+        "球队状态 / Team Form",
+        "上场复盘 / Last Match",
+        "首发伤停 / Lineup",
+        "技战术解读 / Tactics",
+        "数据质量 / Data Quality",
+    ])
 
     with verdict_tab:
         section_header("核心结论", headline, "概率报告")
@@ -651,7 +655,9 @@ def render_match_analysis(
         )
         render_risk_note("长期强度、近期状态和市场先验分别计算后再组合；市场赔率不参与独立模型训练。")
 
-    with score_tab:
+        # 比分矩阵和总进球
+        st.markdown("---")
+        section_header("比分与进球", "最可能比分和总进球分布。")
         score_col, totals_col = st.columns([1.35, 1])
         with score_col:
             figure = score_heatmap(ensemble_matrix, max_goals=7)

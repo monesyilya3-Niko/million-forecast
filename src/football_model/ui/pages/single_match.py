@@ -11,7 +11,7 @@ from football_model.data import LocalDatabase, ModelRepository
 from football_model.engine import estimate_expected_goals
 from football_model.models import DixonColesModel
 from football_model.services import AnalysisService
-from football_model.ui.components import format_percent_columns, hero_pro, probability_chart, render_risk_note, score_heatmap
+from football_model.ui.components import format_percent_columns, hero_pro, plotly_theme, probability_chart, render_risk_note, score_heatmap
 
 logger = logging.getLogger(__name__)
 
@@ -156,10 +156,9 @@ def render_single_match(service: AnalysisService, database: LocalDatabase) -> No
         totals_figure = px.bar(totals, x="总进球", y="概率", color_discrete_sequence=["#3b82f6"])
         totals_figure.update_layout(
             height=235, margin=dict(l=10, r=10, t=5, b=10),
-            yaxis_tickformat=".0%", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            template="plotly_white", font=dict(color="#475569"),
-            yaxis=dict(gridcolor="rgba(0,0,0,0.06)"), xaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
+            yaxis_tickformat=".0%",
         )
+        plotly_theme(totals_figure)
         st.plotly_chart(totals_figure, width="stretch")
 
     render_risk_note("开发样本中的市场赔率不是中国体彩官方SP。理论EV不等于实际收益，必须通过严格滚动回测。")
