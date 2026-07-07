@@ -15,6 +15,7 @@ from football_model.models import DixonColesModel
 from football_model.models.poisson import PoissonModel
 from football_model.models.elo import EloModel
 from football_model.data.adapters.espn import ESPNAdapter
+from football_model.data.adapters.api_football import APIFootballAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class EnsembleAnalysisService:
         self.pipeline = FeaturePipeline()
         self.weather_adapter = WeatherAdapter()
         self.espn = ESPNAdapter()
+        self.api_football = APIFootballAdapter()
         self._model_cache: dict[str, object] = {}
 
     def predict(
@@ -176,6 +178,18 @@ class EnsembleAnalysisService:
 
         if context["injuries"] >= 2:
             confidence = min(100, confidence + 3)
+        else:
+            # Try to fetch injuries from API-Football
+            try:
+                home_injuries = self.api_football.get_injuries(mapped_home, league_name)
+                away_injuries = self.api_football.get_injuries(mapped_away, league_name)
+                if home_injuries or away_injuries:
+                    total_injuries = len(home_injuries) + len(away_injuries)
+                    confidence = min(100, confidence + min(3, total_injuries))
+                    if total_injuries > 0:
+                        risks.append(f"伤停: {mapped_home} {len(home_injuries)}人, {mapped_away} {len(away_injuries)}人")
+            except Exception as e:
+                logger.debug("Injury fetch failed: %s", e)
 
         # Weather is optional, don't penalize heavily
         weather_info = ""
