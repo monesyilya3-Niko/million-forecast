@@ -364,7 +364,8 @@ class LocalDatabase:
     @contextmanager
     def connection(self, *, read_only: bool = False) -> Iterator[duckdb.DuckDBPyConnection]:
         """Context manager for database connections with proper cleanup."""
-        if read_only and self._connection is not None:
+        # Reuse existing connection if available (DuckDB doesn't allow mixed read-only/read-write)
+        if self._connection is not None:
             try:
                 yield self._connection
                 return
@@ -372,14 +373,16 @@ class LocalDatabase:
                 self._connection = None
                 raise
 
-        connection = duckdb.connect(str(self.path), read_only=read_only)
+        connection = duckdb.connect(str(self.path), read_only=False)
+        self._connection = connection
         try:
             yield connection
         except duckdb.Error as e:
             logger.error(f"Database error: {e}")
             raise
         finally:
-            connection.close()
+            # Don't close - keep for reuse
+            pass
 
     def initialize(self) -> None:
         with self.connection() as connection:
