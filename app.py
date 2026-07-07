@@ -64,7 +64,23 @@ try:
     with database.connection(read_only=True) as conn:
         _match_count = conn.execute("SELECT COUNT(*) FROM sporttery_matches").fetchone()[0]
     if _match_count == 0:
-        sporttery_live_service.refresh()
+        try:
+            sporttery_live_service.refresh()
+        except Exception:
+            # Fallback: load cached data if API not accessible (e.g., Hugging Face)
+            import json
+            _cache_path = Path(__file__).parent / "data" / "sporttery_matches_cache.json"
+            if _cache_path.exists():
+                _cached = json.loads(_cache_path.read_text(encoding="utf-8"))
+                with database.connection() as conn:
+                    for _m in _cached:
+                        try:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO sporttery_matches (match_id, home_team, away_team, league_name, kickoff) VALUES (?, ?, ?, ?, ?)",
+                                [_m.get("match_id"), _m.get("home_team"), _m.get("away_team"), _m.get("league_name"), _m.get("kickoff")],
+                            )
+                        except Exception:
+                            pass
 except Exception:
     pass
 
