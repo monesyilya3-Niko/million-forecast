@@ -85,23 +85,32 @@ def _is_model_supported(league: Any) -> bool:
 
 def render_live_matches(live_service: SportteryLiveService) -> None:
     hero_pro(
-        title="今日竞彩",
-        subtitle="官方赛程 · 实时赔率 · 模型分析",
+        title="今日竞彩 / Today's Matches",
+        subtitle="官方赛程 · 实时赔率 · 模型分析 / Official Schedule · Live Odds · Model Analysis",
         eyebrow="LIVE MATCH CENTER",
-        meta=["本地运行", "自动刷新 60s", "数据源：竞彩"],
+        meta=["本地运行 / Local", "自动刷新 / Auto Refresh 30s", "数据源 / Source: 竞彩"],
     )
     _live_panel(live_service)
 
 
-@st.fragment(run_every="60s")
+@st.fragment(run_every="30s")
 def _live_panel(live_service: SportteryLiveService) -> None:
     refresh_error = None
-    try:
-        refresh = live_service.refresh()
-    except (OSError, RuntimeError, ValueError) as error:
-        refresh = None
-        refresh_error = str(error)
-        logger.warning("Live service refresh failed: %s", error)
+    refresh = None
+
+    # 自动重试机制
+    for attempt in range(3):
+        try:
+            refresh = live_service.refresh()
+            break
+        except Exception as error:
+            refresh_error = str(error)
+            if attempt < 2:
+                import time
+                time.sleep(1)
+
+    if refresh is None:
+        logger.warning("Live service refresh failed after 3 attempts: %s", refresh_error)
 
     dates = live_service.dates()
     if not dates:
@@ -113,7 +122,25 @@ def _live_panel(live_service: SportteryLiveService) -> None:
     today = live_service.today_string()
     default_index = dates.index(today) if today in dates else max(0, len(dates) - 1)
 
-    section_header("筛选条件", "按日期、联赛和销售状态过滤实时赛事。", "60s 自动刷新")
+    # 实时状态指示器
+    if refresh:
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">'
+            f'<span class="status-dot live"></span>'
+            f'<span style="font-size:0.78rem;color:#22c55e">实时同步中 · {safe_html(str(refresh.last_update))} · {refresh.total_count}场</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">'
+            '<span class="status-dot warning"></span>'
+            '<span style="font-size:0.78rem;color:#eab308">使用缓存数据 · 接口暂不可用</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    section_header("筛选条件", "按日期、联赛和销售状态过滤实时赛事。", "30s 自动刷新")
     with st.container():
         st.markdown('<div class="card anim-fade">', unsafe_allow_html=True)
         f1, f2, f3 = st.columns([1.45, 1.45, 1])
