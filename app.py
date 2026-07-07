@@ -75,9 +75,32 @@ try:
                 with database.connection() as conn:
                     for _m in _cached:
                         try:
+                            _kickoff = _m.get("kickoff")
+                            if isinstance(_kickoff, (int, float)):
+                                from datetime import datetime, timezone
+                                _kickoff = datetime.fromtimestamp(_kickoff / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                            _biz = _m.get("business_date")
+                            if isinstance(_biz, (int, float)):
+                                from datetime import datetime, timezone
+                                _biz = datetime.fromtimestamp(_biz / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
                             conn.execute(
-                                "INSERT OR IGNORE INTO sporttery_matches (match_id, home_team, away_team, league_name, kickoff) VALUES (?, ?, ?, ?, ?)",
-                                [_m.get("match_id"), _m.get("home_team"), _m.get("away_team"), _m.get("league_name"), _m.get("kickoff")],
+                                """INSERT OR IGNORE INTO sporttery_matches
+                                (match_id, official_match_id, business_date, match_number, kickoff,
+                                 weekday, league_id, league_name, home_team_id, home_team,
+                                 away_team_id, away_team, sell_status, match_status, remark,
+                                 had_single, hhad_single, available_pools, last_update, source)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                [
+                                    _m.get("match_id"), _m.get("official_match_id", 0),
+                                    _biz, _m.get("match_number", ""), _kickoff,
+                                    _m.get("weekday", ""), _m.get("league_id", ""), _m.get("league_name", ""),
+                                    _m.get("home_team_id", 0), _m.get("home_team", ""),
+                                    _m.get("away_team_id", 0), _m.get("away_team", ""),
+                                    _m.get("sell_status", ""), _m.get("match_status", ""), _m.get("remark", ""),
+                                    _m.get("had_single", False), _m.get("hhad_single", False),
+                                    _m.get("available_pools", ""), _m.get("last_update", _kickoff),
+                                    _m.get("source", "sporttery.cn"),
+                                ],
                             )
                         except Exception:
                             pass
