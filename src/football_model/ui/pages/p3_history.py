@@ -55,8 +55,8 @@ def render_p3_history(database: LocalDatabase) -> None:
     filtered = filtered[(filtered["和值"] >= sum_min) & (filtered["和值"] <= sum_max)]
     filtered = filtered[(filtered["跨度"] >= span_min) & (filtered["跨度"] <= span_max)]
 
-    if pattern != "全部":
-        filtered = filtered[filtered.get("pattern_type", "") == pattern]
+    if pattern != "全部" and "pattern_type" in filtered.columns:
+        filtered = filtered[filtered["pattern_type"].astype(str) == pattern]
 
     # 显示数据
     section_header("筛选结果", f"共 {len(filtered)} 期。")

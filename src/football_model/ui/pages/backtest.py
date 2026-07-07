@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from sklearn.metrics import log_loss
 
-from football_model.ui.components import hero_pro
+from football_model.ui.components import hero_pro, plotly_theme, render_risk_note
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +62,8 @@ def render_backtest() -> None:
         height=400,
         xaxis_title="平均预测概率", yaxis_title="实际命中率",
         xaxis_tickformat=".0%", yaxis_tickformat=".0%",
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        template="plotly_white",
-        font=dict(color="#475569"),
-        xaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
-        yaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
     )
+    plotly_theme(figure)
     st.plotly_chart(figure, width="stretch")
+
+    render_risk_note("回测基于历史预测数据，不代表未来表现。模型概率仅供参考，不构成确定赛果或收益承诺。")

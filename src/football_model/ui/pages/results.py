@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from football_model.data import LocalDatabase
-from football_model.ui.components import hero_pro, empty_state
+from football_model.ui.components import hero_pro, empty_state, render_risk_note
 
 
 def render_results(database: LocalDatabase) -> None:
@@ -74,3 +74,5 @@ def render_results(database: LocalDatabase) -> None:
         hide_index=True,
         width="stretch",
     )
+
+    render_risk_note("模型结果仅代表基于当前数据的概率估计，不构成确定赛果或收益承诺。赔率、阵容、伤停和临场因素可能改变比赛结果，请谨慎参考。")

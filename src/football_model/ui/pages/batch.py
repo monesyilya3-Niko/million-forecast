@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from football_model.services import AnalysisService
-from football_model.ui.components import format_percent_columns, hero_pro
+from football_model.ui.components import format_percent_columns, hero_pro, render_risk_note
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +42,9 @@ def render_batch(service: AnalysisService) -> None:
         TEMPLATE.to_csv(index=False).encode("utf-8-sig"),
         "batch_template.csv",
         "text/csv",
+        key="batch-template-dl",
     )
-    upload = st.file_uploader("上传比赛CSV", type="csv")
+    upload = st.file_uploader("上传比赛CSV", type="csv", key="batch-upload")
     frame = pd.read_csv(upload) if upload else TEMPLATE
     missing = set(TEMPLATE.columns) - set(frame.columns)
     if missing:
@@ -60,4 +61,7 @@ def render_batch(service: AnalysisService) -> None:
         results.to_csv(index=False).encode("utf-8-sig"),
         "analysis_results.csv",
         "text/csv",
+        key="batch-export-results",
     )
+
+    render_risk_note("批量分析结果仅代表基于当前数据的概率估计，不构成确定赛果或收益承诺。请谨慎参考。")

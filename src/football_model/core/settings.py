@@ -9,12 +9,15 @@ from pathlib import Path
 @dataclass(frozen=True)
 class AppSettings:
     project_root: Path
-    app_name: str = "绿茵智析"
+    app_name: str = "百万竞猜"
     version: str = "0.7.2"
     database_name: str = "football.duckdb"
 
     @property
     def data_dir(self) -> Path:
+        env = os.environ.get("UPLOAD_DIR")
+        if env:
+            return Path(env).parent
         return self.project_root / "data"
 
     @property
@@ -35,14 +38,23 @@ class AppSettings:
 
     @property
     def artifacts_dir(self) -> Path:
+        env = os.environ.get("MODEL_DIR")
+        if env:
+            return Path(env)
         return self.project_root / "artifacts"
 
     @property
     def reports_dir(self) -> Path:
+        env = os.environ.get("LOG_DIR")
+        if env:
+            return Path(env)
         return self.project_root / "reports"
 
     @property
     def database_path(self) -> Path:
+        env = os.environ.get("DATABASE_PATH")
+        if env:
+            return Path(env)
         return self.data_dir / self.database_name
 
     def ensure_directories(self) -> None:

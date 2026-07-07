@@ -10,7 +10,7 @@ import streamlit as st
 from football_model.core import AppSettings
 from football_model.data import LocalDatabase, MatchRepository, ModelRepository
 from football_model.services import ModelTrainingService
-from football_model.ui.components import hero_pro, section_header, safe_html, empty_state, render_risk_note
+from football_model.ui.components import hero_pro, section_header, safe_html, empty_state, plotly_theme, render_risk_note
 
 logger = logging.getLogger(__name__)
 
@@ -157,13 +157,8 @@ def _render_evaluation_tab(database: LocalDatabase) -> None:
         yaxis_title="实际命中率",
         xaxis_tickformat=".0%",
         yaxis_tickformat=".0%",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        template="plotly_white",
-        font=dict(color="#475569"),
-        yaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
-        xaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
     )
+    plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
 
     # Confidence segments
@@ -213,12 +208,14 @@ def _render_architecture_tab(trained: pd.DataFrame) -> None:
 
     architecture = pd.DataFrame([
         ["市场基线", "SP去水概率", "对照基准", "已具备"],
-        ["Elo", "球队动态实力", "结构化先验", "已接入特征"],
-        ["Dixon–Coles", "完整比分分布", "核心统计模型", "已训练" if len(trained) else "待训练"],
-        ["Poisson特征模型", "近期状态与Elo特征", "生产集成", "已接入"],
-        ["XGBoost/神经网络", "非线性实验", "需独立校准与步进回测", "实验性·未进入生产"],
+        ["Dixon–Coles", "完整比分分布 + 低比分修正ρ", "核心统计模型", "已训练 7 联赛"],
+        ["Poisson回归", "56维特征 log-link", "特征增强统计模型", "已训练 7 联赛"],
+        ["Elo评分", "动态球队实力 + 主场优势", "实力排名模型", "已训练 6 联赛"],
+        ["XGBoost", "梯度提升树 56维特征", "非线性特征交互", "已训练 7 联赛"],
+        ["NeuralNet (MLP)", "多层感知机 56维特征", "深度非线性模式", "已训练 7 联赛"],
+        ["随机森林", "集成决策树 300棵", "稳健非线性模型", "已训练 7 联赛"],
         ["概率校准", "Isotonic/Temperature", "修正置信度", "待回测样本"],
-        ["集成器", "按联赛与时点动态加权", "最终输出", "已接入"],
+        ["集成器", "按联赛动态加权", "最终输出", "已接入"],
         ["数据质量评分", "赔率/阵容/伤停/历史", "置信度输入", "已接入"],
         ["价值分析", "EV/Kelly/风险控制", "竞彩判断", "已接入"],
     ], columns=["组件", "输入/方法", "职责", "状态"])

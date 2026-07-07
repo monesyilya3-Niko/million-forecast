@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from football_model.data import LocalDatabase
+from football_model.ui.components import plotly_theme
 
 logger = logging.getLogger(__name__)
 
@@ -358,17 +359,17 @@ def render_match_detail(database: LocalDatabase, match_id: str) -> None:
     hero_pro(
         f"{home_team} vs {away_team}",
         f"{match[5]} · {league_name} · {pd.to_datetime(kickoff):%Y-%m-%d %H:%M}",
-        "MATCH DETAIL",
-        ["比赛情报档案"],
+        "MATCH DETAIL / 比赛详情",
+        ["比赛情报档案 / Match Intelligence"],
     )
 
     # Back button
     from football_model.ui.navigation import render_back_button
-    render_back_button("← 返回上一页", key="detail-back")
+    render_back_button("← 返回上一页 / Back", key="detail-back")
 
     # 完场比分
     if match[8] == "FT":
-        section_header("完场比分", "比赛最终结果。")
+        section_header("完场比分 / Final Score", "比赛最终结果。")
         c1, c2, c3 = st.columns([1, 0.3, 1])
         with c1:
             st.markdown(f"<div style='text-align:right;font-size:2rem;font-weight:800'>{safe_html(home_team)}</div>", unsafe_allow_html=True)
@@ -380,15 +381,15 @@ def render_match_detail(database: LocalDatabase, match_id: str) -> None:
             st.markdown(f"<div style='text-align:left;font-size:2rem;font-weight:800'>{safe_html(away_team)}</div>", unsafe_allow_html=True)
 
     # 球队画像
-    section_header("球队画像", "双方近期状态、Elo评分和主客场表现。")
+    section_header("球队画像 / Team Profile", "双方近期状态、Elo评分和主客场表现。")
     _render_team_profiles(database, home_team, away_team, competition, kickoff)
 
     # 上场比赛分析
-    section_header("上场比赛分析", "双方最近一场比赛的表现。")
+    section_header("上场比赛分析 / Last Match", "双方最近一场比赛的表现。")
     _render_previous_matches(database, home_team, away_team, competition, kickoff)
 
     # 近期战绩
-    section_header("近期战绩", "双方近5场比赛结果。")
+    section_header("近期战绩 / Recent Form", "双方近5场比赛结果。")
     col1, col2 = st.columns(2)
     with col1:
         _render_team_form(database, home_team, kickoff, "主场")
@@ -396,23 +397,23 @@ def render_match_detail(database: LocalDatabase, match_id: str) -> None:
         _render_team_form(database, away_team, kickoff, "客场")
 
     # 历史交锋
-    section_header("历史交锋", "双方近期直接对话记录。")
+    section_header("历史交锋 / Head to Head", "双方近期直接对话记录。")
     _render_h2h(database, home_team, away_team, competition, kickoff)
 
     # 阵容（本场 + 上一场）
-    section_header("阵容信息", "首发阵容和替补席。")
+    section_header("阵容信息 / Lineup", "首发阵容和替补席。")
     _render_lineups(database, match_id, home_team, away_team, kickoff, league_name)
 
     # 伤停
-    section_header("伤停信息", "伤病和停赛情况。")
+    section_header("伤停信息 / Injuries", "伤病和停赛情况。")
     _render_injuries(database, match_id)
 
     # 技战术分析
-    section_header("技战术分析", "双方战术风格和关键对位。")
+    section_header("技战术分析 / Tactical Analysis", "双方战术风格和关键对位。")
     _render_tactical_analysis(database, match_id, home_team, away_team, competition, kickoff)
 
     # 赔率
-    section_header("赔率变化", "官方赔率走势。")
+    section_header("赔率变化 / Odds Movement", "官方赔率走势。")
     _render_odds_history(database, match_id)
 
 
@@ -648,14 +649,9 @@ def _render_odds_history(database: LocalDatabase, match_id: str) -> None:
         import plotly.express as px
         fig = px.line(had, x="时间", y="赔率", color="选项", title="胜平负赔率变化", markers=True)
         fig.update_layout(
-            template="plotly_white",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
             height=300,
-            font=dict(color="#475569"),
-            yaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
-            xaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
         )
+        plotly_theme(fig)
         st.plotly_chart(fig, use_container_width=True)
 
     latest = df.groupby(["市场", "选项"]).last().reset_index()
@@ -785,9 +781,9 @@ def _render_h2h(database: LocalDatabase, home_team: str, away_team: str, league:
 
 
 def _render_tactical_analysis(database: LocalDatabase, match_id: str, home_team: str, away_team: str, league: str, kickoff: object) -> None:
-    """Render tactical analysis."""
+    """Render comprehensive tactical analysis."""
     from football_model.services.tactical_analysis import TacticalAnalysisService
-    from football_model.ui.components import safe_html
+    from football_model.ui.components import safe_html, render_risk_note, section_header
 
     service = TacticalAnalysisService(database)
 
@@ -798,25 +794,117 @@ def _render_tactical_analysis(database: LocalDatabase, match_id: str, home_team:
         st.info("技战术分析数据不足，等待更多比赛数据积累。")
         return
 
-    col1, col2 = st.columns(2)
-
-    with col1:
+    # 阵型对比
+    section_header("阵型对比 / Formation", "双方预计阵型和上一场阵型。")
+    f1, f2 = st.columns(2)
+    with f1:
         st.markdown(f"**{safe_html(home_team)}**")
-        st.caption(f"阵型: {safe_html(report.home_formation)}")
-        st.caption(f"进攻风格: {safe_html(report.home_attack_style)}")
-        st.caption(f"防守风格: {safe_html(report.home_defense_style)}")
-        st.caption(f"压迫强度: {safe_html(report.home_pressing)}")
-
-    with col2:
+        st.markdown(f"预计阵型: **{safe_html(report.home_formation)}**")
+        if report.home_prev_formation and report.home_prev_formation != "未知":
+            st.caption(f"上一场阵型: {safe_html(report.home_prev_formation)}")
+    with f2:
         st.markdown(f"**{safe_html(away_team)}**")
-        st.caption(f"阵型: {safe_html(report.away_formation)}")
-        st.caption(f"进攻风格: {safe_html(report.away_attack_style)}")
-        st.caption(f"防守风格: {safe_html(report.away_defense_style)}")
-        st.caption(f"压迫强度: {safe_html(report.away_pressing)}")
+        st.markdown(f"预计阵型: **{safe_html(report.away_formation)}**")
+        if report.away_prev_formation and report.away_prev_formation != "未知":
+            st.caption(f"上一场阵型: {safe_html(report.away_prev_formation)}")
 
-    st.markdown("**战术分析**")
-    st.caption(f"战术优势: {safe_html(report.tactical_advantage)}")
+    # 进攻能力
+    section_header("进攻能力 / Attack", "双方进攻风格和强度。")
+    atk1, atk2 = st.columns(2)
+    with atk1:
+        st.markdown(f"**{safe_html(home_team)}**")
+        st.markdown(f"风格: **{safe_html(report.home_attack_style)}**")
+        pct = int(report.home_attack_strength * 100)
+        st.markdown(f'<div class="confidence-bar"><div class="confidence-fill success" style="width:{pct}%"></div></div>', unsafe_allow_html=True)
+        st.caption(f"进攻强度: {report.home_attack_strength:.0%}")
+    with atk2:
+        st.markdown(f"**{safe_html(away_team)}**")
+        st.markdown(f"风格: **{safe_html(report.away_attack_style)}**")
+        pct = int(report.away_attack_strength * 100)
+        st.markdown(f'<div class="confidence-bar"><div class="confidence-fill success" style="width:{pct}%"></div></div>', unsafe_allow_html=True)
+        st.caption(f"进攻强度: {report.away_attack_strength:.0%}")
+
+    # 防守能力
+    section_header("防守能力 / Defense", "双方防守风格和强度。")
+    def1, def2 = st.columns(2)
+    with def1:
+        st.markdown(f"**{safe_html(home_team)}**")
+        st.markdown(f"风格: **{safe_html(report.home_defense_style)}**")
+        pct = int(report.home_defense_strength * 100)
+        color = "success" if pct >= 70 else "warning" if pct >= 50 else "danger"
+        st.markdown(f'<div class="confidence-bar"><div class="confidence-fill {color}" style="width:{pct}%"></div></div>', unsafe_allow_html=True)
+        st.caption(f"防守强度: {report.home_defense_strength:.0%}")
+    with def2:
+        st.markdown(f"**{safe_html(away_team)}**")
+        st.markdown(f"风格: **{safe_html(report.away_defense_style)}**")
+        pct = int(report.away_defense_strength * 100)
+        color = "success" if pct >= 70 else "warning" if pct >= 50 else "danger"
+        st.markdown(f'<div class="confidence-bar"><div class="confidence-fill {color}" style="width:{pct}%"></div></div>', unsafe_allow_html=True)
+        st.caption(f"防守强度: {report.away_defense_strength:.0%}")
+
+    # 压迫强度
+    section_header("压迫强度 / Pressing", "双方压迫方式。")
+    pr1, pr2 = st.columns(2)
+    with pr1:
+        st.markdown(f"**{safe_html(home_team)}**: **{safe_html(report.home_pressing)}**")
+        pct = int(report.home_pressing_intensity * 100)
+        st.markdown(f'<div class="confidence-bar"><div class="confidence-fill info" style="width:{pct}%"></div></div>', unsafe_allow_html=True)
+    with pr2:
+        st.markdown(f"**{safe_html(away_team)}**: **{safe_html(report.away_pressing)}**")
+        pct = int(report.away_pressing_intensity * 100)
+        st.markdown(f'<div class="confidence-bar"><div class="confidence-fill info" style="width:{pct}%"></div></div>', unsafe_allow_html=True)
+
+    # 能力指标对比
+    section_header("能力指标 / Metrics", "反击、边路、中场、定位球。")
+    metrics = [
+        ("反击能力", report.home_counter_attack, report.away_counter_attack),
+        ("边路强度", report.home_wing_strength, report.away_wing_strength),
+        ("中场控制", report.home_central_control, report.away_central_control),
+        ("定位球威胁", report.home_set_piece_threat, report.away_set_piece_threat),
+    ]
+    for name, h_val, a_val in metrics:
+        col1, col2, col3 = st.columns([2, 3, 3])
+        with col1:
+            st.caption(name)
+        with col2:
+            pct = int(h_val * 100)
+            st.markdown(f'<div style="display:flex;align-items:center;gap:0.5rem"><div class="confidence-bar" style="flex:1"><div class="confidence-fill success" style="width:{pct}%"></div></div><span style="font-size:0.75rem">{pct}%</span></div>', unsafe_allow_html=True)
+        with col3:
+            pct = int(a_val * 100)
+            st.markdown(f'<div style="display:flex;align-items:center;gap:0.5rem"><div class="confidence-bar" style="flex:1"><div class="confidence-fill success" style="width:{pct}%"></div></div><span style="font-size:0.75rem">{pct}%</span></div>', unsafe_allow_html=True)
+
+    # 弱点分析
+    section_header("弱点分析 / Weaknesses", "双方防守薄弱环节。")
+    w1, w2 = st.columns(2)
+    with w1:
+        st.markdown(f"**{safe_html(home_team)}**")
+        st.caption(safe_html(report.home_defensive_weakness))
+    with w2:
+        st.markdown(f"**{safe_html(away_team)}**")
+        st.caption(safe_html(report.away_defensive_weakness))
+
+    # 关键对位
+    section_header("关键对位 / Key Matchups", "影响比赛走向的关键因素。")
     for matchup in report.key_matchups:
-        st.caption(f"- {safe_html(matchup)}")
+        st.markdown(f"• {safe_html(matchup)}")
+
+    # 战术优势总结
+    section_header("战术优势总结 / Tactical Summary", "综合评估。")
+    st.markdown(f"**{safe_html(report.tactical_advantage)}**")
+
+    # 优势对比条
+    adv_pct = int((report.advantage_score + 1) / 2 * 100)
+    adv_color = "#22c55e" if report.advantage_score > 0.1 else "#ef4444" if report.advantage_score < -0.1 else "#eab308"
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:1rem;margin:0.5rem 0">'
+        f'<span style="font-size:0.75rem;color:#64748b">{safe_html(home_team)}</span>'
+        f'<div class="confidence-bar" style="flex:1"><div style="width:{adv_pct}%;height:100%;background:{adv_color};border-radius:999px"></div></div>'
+        f'<span style="font-size:0.75rem;color:#64748b">{safe_html(away_team)}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
     st.caption(f"预期变化: {safe_html(report.expected_changes)}")
     st.caption(f"概率影响: {safe_html(report.probability_impact)}")
+
+    render_risk_note("技战术分析基于历史数据推断，实际比赛可能因临场调整、意外事件等因素产生偏差。")

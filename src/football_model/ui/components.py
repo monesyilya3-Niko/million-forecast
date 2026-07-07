@@ -113,6 +113,7 @@ def apply_theme() -> None:
     --red: #ef4444;
     --purple: #8b5cf6;
 }
+html { color-scheme: dark; }
 .stApp {
     background: radial-gradient(circle at 20% 0%, rgba(59,130,246,0.12), transparent 32rem),
                 radial-gradient(circle at 90% 10%, rgba(6,182,212,0.08), transparent 30rem),
@@ -140,13 +141,14 @@ section[data-testid="stSidebar"] {
 .sidebar-section { margin: 0.85rem 0 0.35rem; font-size: 0.68rem; color: var(--text-faint); font-weight: 800; letter-spacing: 0.11em; text-transform: uppercase; }
 section[data-testid="stSidebar"] .stButton > button {
     width: 100%; justify-content: flex-start; border-radius: 12px; border: 1px solid transparent;
-    background: transparent; color: var(--text-secondary); box-shadow: none; padding: 0.58rem 0.72rem; font-size: 0.86rem; transition: all 0.16s ease;
+    background: transparent; color: var(--text-secondary); box-shadow: none; padding: 0.58rem 0.72rem; font-size: 0.86rem;
+    transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
 }
 section[data-testid="stSidebar"] .stButton > button:hover { background: rgba(59,130,246,0.10); border-color: rgba(59,130,246,0.24); color: var(--text-primary); transform: translateX(2px); box-shadow: none; }
 section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, rgba(59,130,246,0.24), rgba(6,182,212,0.13)); border-color: rgba(59,130,246,0.36); color: var(--text-primary); box-shadow: inset 3px 0 0 var(--blue); }
 
 /* Buttons */
-.stButton > button { border-radius: 12px; border: 1px solid rgba(59,130,246,0.32); background: linear-gradient(135deg, rgba(59,130,246,0.92), rgba(6,182,212,0.72)); color: #fff; font-weight: 700; font-size: 0.85rem; box-shadow: 0 10px 24px rgba(37,99,235,0.22); transition: all 0.16s ease; }
+.stButton > button { border-radius: 12px; border: 1px solid rgba(59,130,246,0.32); background: linear-gradient(135deg, rgba(59,130,246,0.92), rgba(6,182,212,0.72)); color: #fff; font-weight: 700; font-size: 0.85rem; box-shadow: 0 10px 24px rgba(37,99,235,0.22); transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease; }
 .stButton > button:hover { border-color: rgba(125,211,252,0.58); transform: translateY(-1px); box-shadow: 0 12px 30px rgba(37,99,235,0.30); }
 .stButton > button[kind="secondary"] { background: rgba(15,23,42,0.82); color: var(--text-secondary); border-color: var(--border); box-shadow: none; }
 
@@ -175,10 +177,14 @@ section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background
 @keyframes fadeIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.48; } }
 .anim-fade { animation: fadeIn 0.32s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+    .anim-fade { animation: none; }
+    .status-dot.live, .status-dot.success { animation: none; }
+}
 
 /* Cards */
 .card, .match-card, .insight-card, .metric-card, .risk-panel, .empty-state, .hero-pro {
-    border: 1px solid var(--border); background: var(--bg-card); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 18px 50px rgba(0,0,0,0.18); backdrop-filter: blur(14px);
+    border: 1px solid var(--border); background: var(--bg-card); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 18px 50px rgba(0,0,0,0.18); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
 .card, .insight-card { border-radius: 18px; padding: 1.05rem; }
 .card:hover, .match-card:hover, .insight-card:hover, .metric-card:hover { border-color: rgba(96,165,250,0.38); background: var(--bg-card-hover); }
@@ -227,7 +233,7 @@ section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background
 .confidence-meter { margin: 0.8rem 0; }
 .confidence-head { display:flex; justify-content:space-between; color: var(--text-muted); font-size:0.74rem; font-weight:800; margin-bottom:0.42rem; }
 .confidence-bar { height: 0.56rem; border-radius:999px; overflow:hidden; background: rgba(51,65,85,0.86); border: 1px solid rgba(148,163,184,0.14); }
-.confidence-fill { height:100%; border-radius:999px; transition: width 0.35s ease; }
+.confidence-fill { height:100%; border-radius:999px; transition: width 0.35s ease-in-out; }
 .confidence-fill.success { background: linear-gradient(90deg, var(--green), var(--cyan)); }
 .confidence-fill.warning { background: linear-gradient(90deg, var(--yellow), var(--cyan)); }
 .confidence-fill.danger { background: linear-gradient(90deg, var(--red), var(--yellow)); }
@@ -312,7 +318,9 @@ def render_badge(text: str, variant: str = "info") -> str:
 def render_status_dot(status: str = "live") -> str:
     allowed = {"live", "success", "warning", "error", "danger", "neutral"}
     status = status if status in allowed else "neutral"
-    return f'<span class="status-dot {status}"></span>'
+    labels = {"live": "在线", "success": "成功", "warning": "警告", "error": "错误", "danger": "危险", "neutral": "中性"}
+    label = labels.get(status, status)
+    return f'<span class="status-dot {status}" aria-label="{label}"></span>'
 
 
 def render_confidence_meter(value: int, label: str = "可信度") -> None:
@@ -359,7 +367,8 @@ def lottery_number_ball(number: int | str, ball_type: str = "p3", size: str = "n
     """
     size_px = "1.8rem" if size == "small" else "2.2rem"
     font_size = "0.8rem" if size == "small" else "0.95rem"
-    return f'<span class="lottery-ball {ball_type}" style="width:{size_px};height:{size_px};font-size:{font_size}">{safe_html(str(number).zfill(2))}</span>'
+    num_text = str(number).zfill(2)
+    return f'<span class="lottery-ball {ball_type}" style="width:{size_px};height:{size_px};font-size:{font_size}" aria-label="号码{num_text}">{safe_html(num_text)}</span>'
 
 
 def render_p3_numbers(d1: int, d2: int, d3: int, show_label: bool = True) -> None:
@@ -418,6 +427,50 @@ def model_score_card(score: float, label: str = "模型评分", max_score: float
 """, unsafe_allow_html=True)
 
 
+def data_quality_badge(score: float) -> str:
+    """Render a data quality badge based on score (0-100)."""
+    if score >= 90:
+        return render_badge("数据质量: 高", "success")
+    elif score >= 70:
+        return render_badge("数据质量: 中", "info")
+    elif score >= 40:
+        return render_badge("数据质量: 低", "warning")
+    else:
+        return render_badge("数据质量: 不可用", "danger")
+
+
+def data_quality_panel(score: float, issues: list[str] | None = None) -> None:
+    """Render a data quality panel with score and issues."""
+    badge = data_quality_badge(score)
+    st.markdown(f"""
+<div class="card" style="margin:0.5rem 0">
+  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+    {badge}
+    <span style="font-size:0.85rem;color:var(--text-secondary)">评分: {score:.0f}/100</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+    if issues:
+        for issue in issues:
+            st.caption(f"⚠️ {issue}")
+
+
+def missing_data_warning(fields: list[str]) -> None:
+    """Render a warning for missing data fields."""
+    if not fields:
+        return
+    field_list = "、".join(fields)
+    st.warning(f"缺少数据字段: {field_list}，部分分析结果可能不完整。")
+
+
+def provider_status_panel(status: dict[str, bool]) -> None:
+    """Render provider status panel."""
+    for provider, available in status.items():
+        dot = render_status_dot("live" if available else "error")
+        label = "可用" if available else "不可用"
+        st.markdown(f"{dot} {safe_html(provider)}: {label}", unsafe_allow_html=True)
+
+
 # ═══════════════════════════════════════════════════════════════════
 # PLOTLY HELPERS
 # ═══════════════════════════════════════════════════════════════════
@@ -453,8 +506,12 @@ def probability_chart(comparison: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     if comparison.empty:
         return plotly_theme(fig)
-    fig.add_trace(go.Bar(x=comparison["赛果"], y=comparison["模型概率"].apply(to_float), name="模型概率", marker_color=COLORS["blue"]))
-    fig.add_trace(go.Bar(x=comparison["赛果"], y=comparison["市场概率"].apply(to_float), name="市场概率", marker_color=COLORS["text_muted"], opacity=0.62))
+
+    # Support both "赛果" and "结果" column names
+    x_col = "赛果" if "赛果" in comparison.columns else "结果"
+
+    fig.add_trace(go.Bar(x=comparison[x_col], y=comparison["模型概率"].apply(to_float), name="模型概率", marker_color=COLORS["blue"]))
+    fig.add_trace(go.Bar(x=comparison[x_col], y=comparison["市场概率"].apply(to_float), name="市场概率", marker_color=COLORS["text_muted"], opacity=0.62))
     fig.update_layout(height=290, yaxis_tickformat=".0%", bargap=0.32)
     return plotly_theme(fig)
 

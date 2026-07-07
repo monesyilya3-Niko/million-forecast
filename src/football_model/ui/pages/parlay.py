@@ -66,7 +66,11 @@ def render_parlay(
     today = live_service.today_string()
     business_date = st.selectbox("选择日期", dates, index=dates.index(today) if today in dates else 0)
     matches = live_service.matches_for_date(business_date)
-    matches = matches[matches["sell_status"] == "1"]
+    if "sell_status" in matches.columns:
+        matches = matches[matches["sell_status"].fillna("").astype(str) == "1"]
+    else:
+        st.info("缺少销售状态字段，无法筛选")
+        return
 
     if matches.empty:
         st.info("无销售中的比赛")
@@ -80,16 +84,19 @@ def render_parlay(
     st.markdown("#### 添加比赛")
     match_options = []
     for _, m in matches.iterrows():
-        if pd.notna(m.get("had_h")):
+        h = m.get("had_h")
+        d = m.get("had_d")
+        a = m.get("had_a")
+        if pd.notna(h) and pd.notna(d) and pd.notna(a):
             match_options.append({
                 "id": str(m["match_id"]),
                 "label": f"{m['home_team']} vs {m['away_team']} ({m['league_name']})",
                 "home": str(m["home_team"]),
                 "away": str(m["away_team"]),
                 "league": str(m["league_name"]),
-                "had_h": float(m["had_h"]),
-                "had_d": float(m["had_d"]),
-                "had_a": float(m["had_a"]),
+                "had_h": float(h),
+                "had_d": float(d),
+                "had_a": float(a),
             })
 
     if not match_options:

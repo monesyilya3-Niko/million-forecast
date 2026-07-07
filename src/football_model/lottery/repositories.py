@@ -1,8 +1,9 @@
 """Lottery data repositories."""
 
 from __future__ import annotations
-
+import json
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
@@ -13,11 +14,36 @@ from .models import P3Draw, DLTDraw
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ImportResult:
+    """Detailed import result."""
+    success: int = 0
+    updated: int = 0
+    skipped: int = 0
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        return self.success + self.updated + self.skipped
+
+    @property
+    def error_count(self) -> int:
+        return len(self.errors)
+
+
 class LotteryRepository:
     """Repository for lottery draw data."""
 
     def __init__(self, database: LocalDatabase) -> None:
         self.database = database
+
+    def _p3_exists(self, conn, issue_no: str) -> bool:
+        row = conn.execute("SELECT 1 FROM p3_draws WHERE issue_no = ?", [issue_no]).fetchone()
+        return row is not None
+
+    def _dlt_exists(self, conn, issue_no: str) -> bool:
+        row = conn.execute("SELECT 1 FROM dlt_draws WHERE issue_no = ?", [issue_no]).fetchone()
+        return row is not None
 
     # ── P3 ──────────────────────────────────────────────────────
 
@@ -57,26 +83,35 @@ class LotteryRepository:
                 ],
             )
 
-    def import_p3_from_csv(self, filepath: str | Path) -> int:
-        """Import P3 draws from CSV."""
+    def import_p3_from_csv(self, filepath: str | Path) -> ImportResult:
+        """Import P3 draws from CSV with detailed result."""
         df = pd.read_csv(filepath)
         required = {"issue_no", "draw_date", "digit_1", "digit_2", "digit_3"}
         missing = required - set(df.columns)
         if missing:
             raise ValueError(f"CSV缺少字段: {missing}")
 
-        count = 0
-        for _, row in df.iterrows():
-            draw = P3Draw(
-                issue_no=str(row["issue_no"]),
-                draw_date=str(row["draw_date"]),
-                digit_1=int(row["digit_1"]),
-                digit_2=int(row["digit_2"]),
-                digit_3=int(row["digit_3"]),
-            )
-            self.save_p3_draw(draw)
-            count += 1
-        return count
+        result = ImportResult()
+        with self.database.connection() as conn:
+            for idx, row in df.iterrows():
+                try:
+                    issue_no = str(row["issue_no"])
+                    is_update = self._p3_exists(conn, issue_no)
+                    draw = P3Draw(
+                        issue_no=issue_no,
+                        draw_date=str(row["draw_date"]),
+                        digit_1=int(row["digit_1"]),
+                        digit_2=int(row["digit_2"]),
+                        digit_3=int(row["digit_3"]),
+                    )
+                    self.save_p3_draw(draw)
+                    if is_update:
+                        result.updated += 1
+                    else:
+                        result.success += 1
+                except Exception as e:
+                    result.errors.append(f"第{idx+1}行: {e}")
+        return result
 
     # ── DLT ─────────────────────────────────────────────────────
 
@@ -124,24 +159,99 @@ class LotteryRepository:
                 ],
             )
 
-    def import_dlt_from_csv(self, filepath: str | Path) -> int:
-        """Import DLT draws from CSV."""
+    def import_dlt_from_csv(self, filepath: str | Path) -> ImportResult:
+        """Import DLT draws from CSV with detailed result."""
         df = pd.read_csv(filepath)
         required = {"issue_no", "draw_date", "front_1", "front_2", "front_3", "front_4", "front_5", "back_1", "back_2"}
         missing = required - set(df.columns)
         if missing:
             raise ValueError(f"CSV缺少字段: {missing}")
 
-        count = 0
-        for _, row in df.iterrows():
-            draw = DLTDraw(
-                issue_no=str(row["issue_no"]),
-                draw_date=str(row["draw_date"]),
-                front_1=int(row["front_1"]), front_2=int(row["front_2"]),
-                front_3=int(row["front_3"]), front_4=int(row["front_4"]),
-                front_5=int(row["front_5"]),
-                back_1=int(row["back_1"]), back_2=int(row["back_2"]),
-            )
-            self.save_dlt_draw(draw)
-            count += 1
-        return count
+        result = ImportResult()
+        with self.database.connection() as conn:
+            for idx, row in df.iterrows():
+                try:
+                    issue_no = str(row["issue_no"])
+                    is_update = self._dlt_exists(conn, issue_no)
+                    draw = DLTDraw(
+                        issue_no=issue_no,
+                        draw_date=str(row["draw_date"]),
+                        front_1=int(row["front_1"]), front_2=int(row["front_2"]),
+                        front_3=int(row["front_3"]), front_4=int(row["front_4"]),
+                        front_5=int(row["front_5"]),
+                        back_1=int(row["back_1"]), back_2=int(row["back_2"]),
+                    )
+                    self.save_dlt_draw(draw)
+                    if is_update:
+                        result.updated += 1
+                    else:
+                        result.success += 1
+                except Exception as e:
+                    result.errors.append(f"第{idx+1}行: {e}")
+        return result
+
+    def import_p3_from_json(self, filepath: str | Path) -> ImportResult:
+        """Import P3 draws from JSON file with detailed result."""
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        result = ImportResult()
+        with self.database.connection() as conn:
+            for idx, item in enumerate(data):
+                try:
+                    numbers = item.get("numbers", [])
+                    if len(numbers) != 3:
+                        result.skipped += 1
+                        result.errors.append(f"第{idx+1}项: 号码数量不是3个")
+                        continue
+                    issue_no = str(item["issue_no"])
+                    is_update = self._p3_exists(conn, issue_no)
+                    draw = P3Draw(
+                        issue_no=issue_no,
+                        draw_date=str(item["draw_date"]),
+                        digit_1=int(numbers[0]),
+                        digit_2=int(numbers[1]),
+                        digit_3=int(numbers[2]),
+                    )
+                    self.save_p3_draw(draw)
+                    if is_update:
+                        result.updated += 1
+                    else:
+                        result.success += 1
+                except Exception as e:
+                    result.errors.append(f"第{idx+1}项: {e}")
+        return result
+
+    def import_dlt_from_json(self, filepath: str | Path) -> ImportResult:
+        """Import DLT draws from JSON file with detailed result."""
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        result = ImportResult()
+        with self.database.connection() as conn:
+            for idx, item in enumerate(data):
+                try:
+                    front = item.get("front", [])
+                    back = item.get("back", [])
+                    if len(front) != 5 or len(back) != 2:
+                        result.skipped += 1
+                        result.errors.append(f"第{idx+1}项: 前区应5个后区应2个")
+                        continue
+                    issue_no = str(item["issue_no"])
+                    is_update = self._dlt_exists(conn, issue_no)
+                    draw = DLTDraw(
+                        issue_no=issue_no,
+                        draw_date=str(item["draw_date"]),
+                        front_1=int(front[0]), front_2=int(front[1]),
+                        front_3=int(front[2]), front_4=int(front[3]),
+                        front_5=int(front[4]),
+                        back_1=int(back[0]), back_2=int(back[1]),
+                    )
+                    self.save_dlt_draw(draw)
+                    if is_update:
+                        result.updated += 1
+                    else:
+                        result.success += 1
+                except Exception as e:
+                    result.errors.append(f"第{idx+1}项: {e}")
+        return result

@@ -21,16 +21,16 @@ class ModelTrainingService:
         self.artifacts_dir = Path(artifacts_dir)
         logger.info(f"ModelTrainingService initialized with artifacts dir: {self.artifacts_dir}")
 
-    def train_dixon_coles(self, competition: str, *, team_scope: set[str] | None = None) -> tuple[DixonColesModel, str]:
+    def train_dixon_coles(self, competition: str, *, team_scope: set[str] | None = None, maxiter: int = 100_000) -> tuple[DixonColesModel, str]:
         """Train a Dixon-Coles model for a specific competition."""
-        logger.info(f"Starting training for competition: {competition}")
+        logger.info(f"Starting training for competition: {competition} (maxiter={maxiter})")
         training_data = self.matches.training_frame(competition)
         if team_scope:
             training_data = training_data.loc[
                 training_data["home_team"].isin(team_scope) & training_data["away_team"].isin(team_scope)
             ].copy()
         validation_metrics = self._time_holdout_metrics(training_data, competition)
-        model = DixonColesModel.fit(training_data, competition=competition)
+        model = DixonColesModel.fit(training_data, competition=competition, maxiter=maxiter)
         model.metrics.update(validation_metrics)
         model.metrics["training_cutoff"] = model.training_cutoff
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

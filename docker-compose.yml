@@ -1,0 +1,20 @@
+services:
+  million-forecast:
+    build: .
+    container_name: million-forecast
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8502}:8502"
+    volumes:
+      - ./data:/app/data
+      - ./model_artifacts:/app/model_artifacts
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=production
+      - DATABASE_PATH=/app/data/football.duckdb
+      - MODEL_DIR=/app/model_artifacts
+      - UPLOAD_DIR=/app/uploads
+      - LOG_DIR=/app/logs

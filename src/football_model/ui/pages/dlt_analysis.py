@@ -12,7 +12,7 @@ from football_model.data import LocalDatabase
 from football_model.lottery import LotteryRepository, DLTAnalysisService
 from football_model.ui.components import (
     hero_pro, section_header, empty_state, render_risk_note,
-    render_dlt_numbers, lottery_number_ball,
+    render_dlt_numbers, lottery_number_ball, plotly_theme,
 )
 
 logger = logging.getLogger(__name__)
@@ -295,22 +295,18 @@ def _render_import_section(repo: LotteryRepository) -> None:
             df = pd.read_csv(upload)
             st.dataframe(df.head(10), hide_index=True, use_container_width=True)
             if st.button("确认导入", key="dlt-import-confirm", type="primary"):
-                count = repo.import_dlt_from_csv(upload)
-                st.success(f"成功导入 {count} 期数据")
+                result = repo.import_dlt_from_csv(upload)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("成功", result.success)
+                c2.metric("更新", result.updated)
+                c3.metric("错误", result.error_count)
+                if result.error_count > 0:
+                    for err in result.errors[:5]:
+                        st.warning(err)
                 st.rerun()
         except Exception as e:
             st.error(f"导入失败: {e}")
 
 
-def _apply_chart_theme(fig: go.Figure) -> go.Figure:
-    """Apply dark theme to chart."""
-    fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#94a3b8"),
-        margin=dict(l=40, r=20, t=30, b=40),
-        xaxis=dict(gridcolor="rgba(148,163,184,0.08)"),
-        yaxis=dict(gridcolor="rgba(148,163,184,0.08)"),
-    )
-    return fig
+
+_apply_chart_theme = plotly_theme

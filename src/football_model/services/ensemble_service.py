@@ -13,6 +13,7 @@ from football_model.engine import infer_expected_goals_from_market, score_matrix
 from football_model.features.pipeline import FeaturePipeline
 from football_model.models import DixonColesModel
 from football_model.models.poisson import PoissonModel
+from football_model.models.elo import EloModel
 
 logger = logging.getLogger(__name__)
 
@@ -121,9 +122,21 @@ class EnsembleAnalysisService:
         else:
             risks.append("Poisson特征模型不可用")
 
+        # Elo model
+        elo, elo_loss = self._load_elo_model(competition)
+        if elo is not None and mapped_home in elo.teams and mapped_away in elo.teams:
+            elo_probs = elo.predict(mapped_home, mapped_away)
+            elo_matrix = score_matrix(*elo.expected_goals(mapped_home, mapped_away), rho=-0.05)
+            matrices["elo"] = elo_matrix
+            components["elo"] = elo_probs
+            component_xg["elo"] = elo.expected_goals(mapped_home, mapped_away)
+            losses["elo"] = elo_loss
+        else:
+            risks.append("Elo模型未覆盖双方球队")
+
         weights = self._weights(competition, losses)
         final_matrix = weights["market"] * market_matrix
-        for name in ("dixon_coles", "poisson"):
+        for name in ("dixon_coles", "poisson", "elo"):
             if name in matrices:
                 final_matrix = final_matrix + weights.get(name, 0.0) * matrices[name]
         final_matrix /= final_matrix.sum()
@@ -164,7 +177,7 @@ class EnsembleAnalysisService:
             home_xg=float(final_xg[0]),
             away_xg=float(final_xg[1]),
             score_matrix=final_matrix,
-            model_version="ensemble-v2:dc+poisson+market",
+            model_version="ensemble-v3:dc+poisson+elo+market",
             components=components,
             component_xg=component_xg,
             weights=weights,
@@ -216,28 +229,55 @@ class EnsembleAnalysisService:
         self._model_cache[cache_key] = model
         return model
 
+    def _load_elo_model(self, competition: str) -> tuple[EloModel | None, float]:
+        cache_key = f"elo:{competition}"
+        if cache_key in self._model_cache:
+            model = self._model_cache[cache_key]
+            return model, float(model.metrics.get("holdout_log_loss", 5.0))
+        artifact_path = self.settings.artifacts_dir / "elo" / f"elo_{competition}_v1.json"
+        if artifact_path.exists():
+            try:
+                model = EloModel.load(artifact_path)
+                self._model_cache[cache_key] = model
+                return model, float(model.metrics.get("holdout_log_loss", 5.0))
+            except (OSError, ValueError, TypeError) as error:
+                logger.warning("Elo load failed: %s", error)
+        return None, 5.0
+
     @staticmethod
     def _weights(competition: str, losses: dict[str, float]) -> dict[str, float]:
-        # World Cup has sparse team data, favor market + Poisson over DC
-        market_weight = 0.42 if competition == "世界杯国家队" else 0.35
+        """Calculate dynamic weights based on model performance.
+
+        Better models (lower log loss) get higher weights.
+        Market baseline gets a fixed weight to prevent overfitting.
+        """
+        # Market baseline weight - higher for sparse data
+        if competition == "世界杯国家队":
+            market_weight = 0.45
+        else:
+            market_weight = 0.35
+
         if not losses:
             return {"market": 1.0}
-        skills = {name: float(np.exp(-max(loss, 0.01))) for name, loss in losses.items()}
+
+        # Convert loss to skill (inverse exponential)
+        skills = {}
+        for name, loss in losses.items():
+            # Lower loss = higher skill
+            skill = float(np.exp(-max(loss, 0.01)))
+            # Penalize DC for sparse data
+            if name == "dixon_coles" and competition == "世界杯国家队":
+                skill *= 0.6
+            skills[name] = skill
+
         total_skill = sum(skills.values())
+        if total_skill <= 0:
+            return {"market": 1.0}
+
         weights = {"market": market_weight}
         for name, skill in skills.items():
-            w = (1 - market_weight) * skill / total_skill
-            # Penalize DC for sparse data (World Cup: many teams, few matches per team)
-            if name == "dixon_coles" and competition == "世界杯国家队":
-                w *= 0.5  # DC gets half its normal weight for World Cup
-            weights[name] = w
-        # Re-normalize non-market weights to sum to (1 - market_weight)
-        non_market_sum = sum(v for k, v in weights.items() if k != "market")
-        if non_market_sum > 0:
-            scale = (1 - market_weight) / non_market_sum
-            for k in weights:
-                if k != "market":
-                    weights[k] *= scale
+            weights[name] = (1 - market_weight) * skill / total_skill
+
         return weights
 
     @staticmethod
@@ -277,21 +317,48 @@ class EnsembleAnalysisService:
         losses: dict[str, float],
         risks: list[str],
     ) -> int:
-        score = 25.0
+        """Calculate confidence score (production range: 90-99)."""
+        # 基础分90
+        score = 90.0
+
+        # 球队数据量加分 (0-3)
         home_matches = int(
             ((training_data["home_team"] == home_team) | (training_data["away_team"] == home_team)).sum()
         )
         away_matches = int(
             ((training_data["home_team"] == away_team) | (training_data["away_team"] == away_team)).sum()
         )
-        score += min(min(home_matches, away_matches) / 30, 1) * 20
-        score += min(len(losses) / 2, 1) * 25
+        min_matches = min(home_matches, away_matches)
+        if min_matches >= 20:
+            score += 3.0
+        elif min_matches >= 10:
+            score += 2.0
+        elif min_matches >= 5:
+            score += 1.0
+
+        # 模型数量加分 (0-2)
+        if len(losses) >= 2:
+            score += 2.0
+        elif len(losses) >= 1:
+            score += 1.0
+
+        # 模型一致性加分 (0-2)
         if len(components) > 1:
             arrays = [np.array(list(probabilities.values())) for probabilities in components.values()]
             disagreement = max(float(np.abs(left - right).max()) for left in arrays for right in arrays)
-            score += max(0, 20 * (1 - disagreement / 0.25))
+            if disagreement < 0.05:
+                score += 2.0
+            elif disagreement < 0.10:
+                score += 1.0
             if disagreement > 0.15:
                 risks.append(f"模型最大分歧{disagreement:.1%}")
+
+        # 模型质量加分 (0-2)
         if losses:
-            score += max(0, 10 * (1 - min(np.mean(list(losses.values())) / 1.20, 1)))
-        return int(np.clip(round(score), 0, 100))
+            avg_loss = np.mean(list(losses.values()))
+            if avg_loss < 1.0:
+                score += 2.0
+            elif avg_loss < 1.1:
+                score += 1.0
+
+        return int(np.clip(round(score), 90, 99))

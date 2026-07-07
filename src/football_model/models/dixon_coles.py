@@ -33,8 +33,9 @@ class DixonColesModel:
         frame: pd.DataFrame,
         *,
         competition: str,
-        decay: float = 0.0015,
-        regularization: float = 0.02,
+        decay: float | None = None,
+        regularization: float | None = None,
+        maxiter: int = 100_000,
     ) -> DixonColesModel:
         required = {"kickoff", "home_team", "away_team", "home_goals", "away_goals"}
         missing = required - set(frame.columns)
@@ -66,14 +67,43 @@ class DixonColesModel:
         away_goals = data["away_goals"].to_numpy(dtype=int)
         latest = data["kickoff"].max()
         age_days = (latest - data["kickoff"]).dt.total_seconds().to_numpy() / 86400
-        weights = np.exp(-decay * age_days)
         team_count = len(teams)
 
+        # Adaptive decay: target 10% weight for oldest data
+        if decay is None:
+            max_age = float(age_days.max())
+            decay = -np.log(0.10) / max_age if max_age > 0 else 0.0015
+        weights = np.exp(-decay * age_days)
+
+        # Adaptive regularization: scale with sqrt(teams)
+        if regularization is None:
+            regularization = 0.02 * np.sqrt(team_count / 20.0)
+
         mean_goals = max(float((home_goals.sum() + away_goals.sum()) / (2 * len(data))), 0.2)
+        home_mean = max(float(home_goals.mean()), 0.2)
+        away_mean = max(float(away_goals.mean()), 0.2)
+        home_advantage_init = np.log(home_mean / away_mean) if away_mean > 0 else 0.2
+
+        # Empirical rho estimation from low-score matches
+        low_score_mask = (home_goals <= 1) & (away_goals <= 1)
+        if low_score_mask.sum() > 50:
+            obs_00 = float(((home_goals == 0) & (away_goals == 0)).sum()) / len(data)
+            obs_11 = float(((home_goals == 1) & (away_goals == 1)).sum()) / len(data)
+            exp_00 = np.exp(-home_mean) * np.exp(-away_mean)
+            exp_11 = home_mean * np.exp(-home_mean) * away_mean * np.exp(-away_mean)
+            rho_candidates = []
+            if exp_00 > 0.01:
+                rho_candidates.append((obs_00 / exp_00 - 1) / (home_mean * away_mean) if home_mean * away_mean > 0 else 0)
+            if exp_11 > 0.01:
+                rho_candidates.append((1 - obs_11 / exp_11))
+            rho_init = float(np.clip(np.median(rho_candidates) if rho_candidates else -0.05, -0.3, 0.1))
+        else:
+            rho_init = -0.05
+
         initial = np.zeros(team_count * 2 + 3)
         initial[-3] = np.log(mean_goals)
-        initial[-2] = 0.2
-        initial[-1] = -0.05
+        initial[-2] = np.clip(home_advantage_init, 0.0, 0.5)
+        initial[-1] = rho_init
 
         # Pre-compute masks for tau calculation (optimization)
         mask_00 = (home_goals == 0) & (away_goals == 0)
@@ -112,7 +142,7 @@ class DixonColesModel:
             initial,
             method="L-BFGS-B",
             bounds=bounds,
-            options={"maxiter": 5000, "maxfun": 200000, "ftol": 1e-9},
+            options={"maxiter": maxiter, "maxfun": maxiter * 40, "ftol": 1e-12},
         )
         if not result.success:
             raise RuntimeError(f"Dixon-Coles训练未收敛：{result.message}")
@@ -126,8 +156,15 @@ class DixonColesModel:
             "matches": len(data),
             "teams": team_count,
             "weighted_nll_per_match": float(result.fun / weights.sum()),
-            "decay": decay,
+            "decay": float(decay),
+            "regularization": float(regularization),
+            "maxiter": maxiter,
             "optimizer_iterations": int(result.nit),
+            "optimizer_evaluations": int(result.nfev),
+            "optimizer_success": bool(result.success),
+            "optimizer_message": str(result.message),
+            "rho_init": float(rho_init),
+            "home_advantage_init": float(home_advantage_init),
             "competition": competition,
         }
         return cls(

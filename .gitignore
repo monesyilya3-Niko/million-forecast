@@ -1,19 +1,51 @@
-.venv/
-.cache/
+# ── Python ──
 __pycache__/
-.pytest_cache/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual env ──
+.venv/
+venv/
+env/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Testing ──
 .pytest-tmp/
-.ruff_cache/
-.superpowers/
-.worktrees/
-*.py[cod]
-data/*.duckdb*
-data/raw/*
-data/normalized/*
-data/features/*
-data/predictions/*
-artifacts/*
-reports/*
-!data/**/.gitkeep
-!artifacts/.gitkeep
-!reports/.gitkeep
+.pytest_cache/
+htmlcov/
+.coverage
+
+# ── Data (不要提交真实数据) ──
+*.duckdb
+*.duckdb.wal
+data/football.duckdb
+data/p3_training_result.json
+data/p3_training.log
+data/training_results_*.json
+
+# ── 模型文件 ──
+model_artifacts/
+artifacts/
+
+# ── 上传和日志 ──
+uploads/
+logs/
+reports/*.log
+reports/*.pid
+
+# ── 环境变量 ──
+.env
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+desktop.ini
