@@ -181,6 +181,78 @@ class ESPNAdapter:
             logger.warning("ESPN direct roster failed: %s", e)
             return None
 
+    def get_match_results(self, league: str, days_back: int = 7) -> list[dict]:
+        """Get recent match results from ESPN."""
+        espn_league = ESPN_LEAGUES.get(league)
+        if not espn_league:
+            return []
+
+        today = datetime.now()
+        start = (today - timedelta(days=days_back)).strftime("%Y%m%d")
+        end = today.strftime("%Y%m%d")
+        events = self._get_events(espn_league, start, end)
+
+        results = []
+        for event in events:
+            comp = event.get("competitions", [{}])[0]
+            status = comp.get("status", {}).get("type", {}).get("name", "")
+            if status not in ("FULL_TIME", "FINAL", "POST"):
+                continue
+
+            competitors = comp.get("competitors", [])
+            if len(competitors) != 2:
+                continue
+
+            home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0])
+            away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1])
+
+            results.append({
+                "event_id": event.get("id"),
+                "home_team": home.get("team", {}).get("displayName", ""),
+                "away_team": away.get("team", {}).get("displayName", ""),
+                "home_goals": int(home.get("score", "0")),
+                "away_goals": int(away.get("score", "0")),
+                "status": status,
+                "date": event.get("date", ""),
+            })
+
+        return results
+
+    def get_standings(self, league: str) -> list[dict]:
+        """Get league standings from ESPN."""
+        espn_league = ESPN_LEAGUES.get(league)
+        if not espn_league:
+            return []
+
+        try:
+            url = f"{self.BASE_URL}/{espn_league}/standings"
+            resp = self._client.get(url)
+            if resp.status_code != 200:
+                return []
+
+            data = resp.json()
+            standings = []
+            for group in data.get("children", []):
+                for entry in group.get("standings", {}).get("entries", []):
+                    team = entry.get("team", {})
+                    stats = {s.get("name"): s.get("value") for s in entry.get("stats", [])}
+                    standings.append({
+                        "team_name": team.get("displayName", ""),
+                        "position": stats.get("rank", 0),
+                        "points": stats.get("points", 0),
+                        "played": stats.get("gamesPlayed", 0),
+                        "won": stats.get("wins", 0),
+                        "draw": stats.get("ties", 0),
+                        "lost": stats.get("losses", 0),
+                        "goals_for": stats.get("pointsFor", 0),
+                        "goals_against": stats.get("pointsAgainst", 0),
+                    })
+            return standings
+
+        except Exception as e:
+            logger.warning("ESPN standings failed: %s", e)
+            return []
+
     def _get_events(self, league: str, start: str, end: str) -> list[dict]:
         """Get events for a league within date range."""
         try:
