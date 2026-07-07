@@ -155,7 +155,7 @@ def _live_panel(live_service: SportteryLiveService) -> None:
             leagues = ["全部"]
 
         selected_league = f2.selectbox("联赛", leagues, key="live-league")
-        only_selling = f3.toggle("仅销售中", value=True, key="live-only-selling")
+        only_selling = f3.toggle("仅销售中", value=False, key="live-only-selling")
         st.markdown("</div>", unsafe_allow_html=True)
 
     if matches.empty:
