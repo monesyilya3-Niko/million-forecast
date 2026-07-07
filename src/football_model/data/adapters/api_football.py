@@ -18,6 +18,16 @@ logger = logging.getLogger(__name__)
 
 API_FOOTBALL_BASE = "https://v3.football.api-sports.io"
 
+# League ID mapping
+LEAGUE_IDS = {
+    "英格兰超级联赛": 39,
+    "西班牙甲级联赛": 140,
+    "意大利甲级联赛": 135,
+    "德国甲级联赛": 78,
+    "法国甲级联赛": 61,
+    "世界杯国家队": 1,
+}
+
 
 @dataclass
 class InjuryInfo:
@@ -43,13 +53,11 @@ class APIFootballAdapter:
             return []
 
         try:
-            headers = {
-                "x-apisports-key": self.api_key,
-            }
-            params = {
-                "team": team_name,
-                "season": "2025",
-            }
+            headers = {"x-apisports-key": self.api_key}
+            params = {"team": team_name, "season": 2025}
+            if league_name and league_name in LEAGUE_IDS:
+                params["league"] = LEAGUE_IDS[league_name]
+
             resp = httpx.get(
                 f"{API_FOOTBALL_BASE}/injuries",
                 headers=headers,
@@ -65,7 +73,7 @@ class APIFootballAdapter:
             for item in data.get("response", []):
                 player = item.get("player", {})
                 team = item.get("team", {})
-                injury = item.get("player", {}).get("reason", "")
+                injury = player.get("reason", "")
 
                 injuries.append(InjuryInfo(
                     player_name=player.get("name", "Unknown"),
@@ -102,3 +110,44 @@ class APIFootballAdapter:
         except Exception as e:
             logger.debug("Team search failed: %s", e)
         return None
+
+    def get_injuries_by_team_id(self, team_id: int, league_id: int = 0) -> list[InjuryInfo]:
+        """Get injuries by team ID (more reliable than name)."""
+        if not self.enabled:
+            return []
+
+        try:
+            headers = {"x-apisports-key": self.api_key}
+            params = {"team": team_id, "season": 2025}
+            if league_id:
+                params["league"] = league_id
+
+            resp = httpx.get(
+                f"{API_FOOTBALL_BASE}/injuries",
+                headers=headers,
+                params=params,
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return []
+
+            data = resp.json()
+            injuries = []
+            for item in data.get("response", []):
+                player = item.get("player", {})
+                team = item.get("team", {})
+                injury = player.get("reason", "")
+
+                injuries.append(InjuryInfo(
+                    player_name=player.get("name", "Unknown"),
+                    team_name=team.get("name", ""),
+                    injury_type=player.get("type", ""),
+                    reason=injury,
+                    status="injured" if "injury" in injury.lower() else "doubtful",
+                ))
+
+            return injuries
+
+        except Exception as e:
+            logger.debug("Injury fetch by ID failed: %s", e)
+            return []
