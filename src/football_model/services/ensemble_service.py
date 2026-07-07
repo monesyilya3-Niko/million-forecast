@@ -14,6 +14,7 @@ from football_model.features.pipeline import FeaturePipeline
 from football_model.models import DixonColesModel
 from football_model.models.poisson import PoissonModel
 from football_model.models.elo import EloModel
+from football_model.data.adapters.espn import ESPNAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class EnsembleAnalysisService:
         self.settings = settings
         self.pipeline = FeaturePipeline()
         self.weather_adapter = WeatherAdapter()
+        self.espn = ESPNAdapter()
         self._model_cache: dict[str, object] = {}
 
     def predict(
@@ -147,28 +149,44 @@ class EnsembleAnalysisService:
         )
         confidence = self._confidence(training_data, mapped_home, mapped_away, components, losses, risks)
 
+        # Auto-fetch lineups from ESPN if not in database
+        context = self._context_availability(match_id, kickoff)
+        if context["current_lineups"] < 2 and context["previous_lineups"] < 2:
+            try:
+                home_roster = self.espn.get_team_roster(league_name, mapped_home)
+                away_roster = self.espn.get_team_roster(league_name, mapped_away)
+                if home_roster and len(home_roster) >= 11:
+                    self._save_lineup_to_db(match_id, "home", home_roster, kickoff)
+                    context["previous_lineups"] += 1
+                if away_roster and len(away_roster) >= 11:
+                    self._save_lineup_to_db(match_id, "away", away_roster, kickoff)
+                    context["previous_lineups"] += 1
+            except Exception as e:
+                logger.debug("ESPN lineup auto-fetch failed: %s", e)
+
+        # Confidence adjustments based on context
+        if context["current_lineups"] >= 2:
+            confidence = min(100, confidence + 10)
+        elif context["previous_lineups"] >= 2:
+            confidence = min(100, confidence + 5)
+            risks.append("使用上一场首发阵容，本场首发未确认")
+        else:
+            risks.append("首发阵容不可用")
+            confidence = max(60, confidence - 3)
+
+        if context["injuries"] >= 2:
+            confidence = min(100, confidence + 3)
+
+        # Weather is optional, don't penalize heavily
         weather_info = ""
         if venue:
-            weather = self.weather_adapter.fetch_for_venue(venue, kickoff.to_pydatetime())
-            if weather:
-                weather_info = f"{weather.description} {weather.temperature_c:.0f}°C 风{weather.wind_speed_kmh:.0f}km/h"
-        if not weather_info:
-            risks.append("场馆天气不可用，天气未纳入模型")
-            confidence = max(0, confidence - 5)
-        context = self._context_availability(match_id, kickoff)
-        if context["current_lineups"] >= 2:
-            confidence = min(100, confidence + 12)
-        else:
-            risks.append("本场首发尚未确认")
-            confidence = max(0, confidence - 8)
-        if context["previous_lineups"] >= 2:
-            confidence = min(100, confidence + 4)
-        else:
-            risks.append("上一场首发尚未同步")
-        if context["injuries"] >= 2:
-            confidence = min(100, confidence + 4)
-        else:
-            risks.append("伤停数据尚未同步")
+            try:
+                weather = self.weather_adapter.fetch_for_venue(venue, kickoff.to_pydatetime())
+                if weather:
+                    weather_info = f"{weather.description} {weather.temperature_c:.0f}°C 风{weather.wind_speed_kmh:.0f}km/h"
+                    confidence = min(100, confidence + 2)
+            except Exception:
+                pass
 
         return EnsemblePrediction(
             home_win=final_probs["home_win"],
@@ -243,6 +261,23 @@ class EnsembleAnalysisService:
             except (OSError, ValueError, TypeError) as error:
                 logger.warning("Elo load failed: %s", error)
         return None, 5.0
+
+    def _save_lineup_to_db(self, match_id: str, team_side: str, players: list, captured_at) -> None:
+        """Save lineup fetched from ESPN to database."""
+        try:
+            players_json = str([
+                {"name": p.name, "position": p.position, "jersey": p.jersey, "starter": p.starter}
+                for p in players
+            ])
+            with self.database.connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO lineup_snapshots
+                    (match_id, provider_fixture_id, team_side, is_current, formation,
+                     confirmed, players_json, captured_at)
+                    VALUES (?, 0, ?, TRUE, NULL, TRUE, ?, ?)
+                """, [match_id, team_side, players_json, captured_at])
+        except Exception as e:
+            logger.debug("Lineup save failed: %s", e)
 
     @staticmethod
     def _weights(competition: str, losses: dict[str, float]) -> dict[str, float]:
