@@ -109,6 +109,18 @@ def _data_source_summary() -> str:
     return f"竞彩缓存 {len(dates)} 日" if dates else "竞彩缓存待同步"
 
 
+def _get_display_url() -> str:
+    """Get the display URL based on deployment environment."""
+    import os
+    # Hugging Face Spaces
+    if os.environ.get("SPACE_ID"):
+        return "Hugging Face Spaces"
+    # Docker / local
+    host = os.environ.get("APP_HOST", "127.0.0.1")
+    port = os.environ.get("APP_PORT", "8502")
+    return f"{host}:{port}"
+
+
 # ── Sidebar ──────────────────────────────────────────────────────
 with st.sidebar:
     db_ok = database.health_check()
@@ -125,7 +137,7 @@ with st.sidebar:
   <div class="sidebar-tagline">足球竞彩 · 排列三 · 大乐透</div>
   <div class="sidebar-meta">
     <div class="sidebar-meta-row"><span>终端状态</span><strong>{render_status_dot(status_variant)}{safe_html(status_text)}</strong></div>
-    <div class="sidebar-meta-row"><span>运行地址</span><strong>127.0.0.1:8502</strong></div>
+    <div class="sidebar-meta-row"><span>运行地址</span><strong>{safe_html(_get_display_url())}</strong></div>
     <div class="sidebar-meta-row"><span>数据源</span><strong>{safe_html(source_summary)}</strong></div>
     <div class="sidebar-meta-row"><span>版本</span><strong>v{safe_html(settings.version)}</strong></div>
   </div>
