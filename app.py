@@ -83,6 +83,10 @@ try:
                             if isinstance(_biz, (int, float)):
                                 from datetime import datetime, timezone
                                 _biz = datetime.fromtimestamp(_biz / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+                            _last_upd = _m.get("last_update")
+                            if isinstance(_last_upd, (int, float)):
+                                from datetime import datetime, timezone
+                                _last_upd = datetime.fromtimestamp(_last_upd / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                             conn.execute(
                                 """INSERT OR IGNORE INTO sporttery_matches
                                 (match_id, official_match_id, business_date, match_number, kickoff,
@@ -98,7 +102,7 @@ try:
                                     _m.get("away_team_id", 0), _m.get("away_team", ""),
                                     _m.get("sell_status", ""), _m.get("match_status", ""), _m.get("remark", ""),
                                     _m.get("had_single", False), _m.get("hhad_single", False),
-                                    _m.get("available_pools", ""), _m.get("last_update", _kickoff),
+                                    _m.get("available_pools", ""), _last_upd or _kickoff,
                                     _m.get("source", "sporttery.cn"),
                                 ],
                             )
