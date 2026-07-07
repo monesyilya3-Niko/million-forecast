@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os as _os
 from typing import Any
 
 import pandas as pd
@@ -98,16 +99,20 @@ def _live_panel(live_service: SportteryLiveService) -> None:
     refresh_error = None
     refresh = None
 
-    # 自动重试机制
-    for attempt in range(3):
-        try:
-            refresh = live_service.refresh()
-            break
-        except Exception as error:
-            refresh_error = str(error)
-            if attempt < 2:
-                import time
-                time.sleep(1)
+    # HuggingFace 等海外环境：跳过 API 刷新，直接用缓存
+    _is_cloud = bool(_os.environ.get("SPACE_ID") or _os.environ.get("DOCKER_CONTAINER"))
+
+    if not _is_cloud:
+        # 本地环境：自动重试机制
+        for attempt in range(3):
+            try:
+                refresh = live_service.refresh()
+                break
+            except Exception as error:
+                refresh_error = str(error)
+                if attempt < 2:
+                    import time
+                    time.sleep(1)
 
     if refresh is None:
         logger.warning("Live service refresh failed after 3 attempts: %s", refresh_error)
