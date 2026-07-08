@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json as _json
 import logging
 import sys
 from pathlib import Path
@@ -14,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from football_model.core import get_settings  # noqa: E402
 from football_model.data import LocalDatabase  # noqa: E402
+from football_model.data.cache_loader import load_all_caches  # noqa: E402
 from football_model.services import AnalysisService, SportteryLiveService  # noqa: E402
 from football_model.services.ensemble_service import EnsembleAnalysisService  # noqa: E402
 from football_model.ui.components import apply_theme, render_status_dot, safe_html  # noqa: E402
@@ -60,94 +60,30 @@ analysis_service = AnalysisService()
 sporttery_live_service = SportteryLiveService(database)
 ensemble_service = EnsembleAnalysisService(database, settings)
 
-# ── Auto-fetch data on first run (Hugging Face Spaces) ──────────
+# ── Load cached data for HuggingFace / Docker ───────────────────
+load_all_caches(database)
 
-def _load_cache_if_empty(db, cache_name: str, table: str, transform=None):
-    """Load cached JSON data into database table if empty."""
+# ── Helper functions ─────────────────────────────────────────────
+
+def _data_source_summary() -> str:
+    """Return a small local-cache status string."""
     try:
-        with db.connection(read_only=True) as conn:
-            count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
-        if count > 0:
-            return
-        cache_path = Path(__file__).parent / "data" / cache_name
-        if not cache_path.exists():
-            return
-        records = _json.loads(cache_path.read_text(encoding="utf-8"))
-        if not records:
-            return
-        with db.connection() as conn:
-            for rec in records:
-                try:
-                    if transform:
-                        transform(conn, rec)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+        dates = sporttery_live_service.dates()
+    except (OSError, RuntimeError, ValueError) as error:
+        logger.warning("Failed to read live dates: %s", error)
+        return "竞彩缓存不可读"
+    return f"竞彩缓存 {len(dates)} 日" if dates else "竞彩缓存待同步"
 
-def _transform_sporttery(conn, _m):
-    from datetime import datetime, timezone
-    _kickoff = _m.get("kickoff")
-    if isinstance(_kickoff, (int, float)):
-        _kickoff = datetime.fromtimestamp(_kickoff / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    _biz = _m.get("business_date")
-    if isinstance(_biz, (int, float)):
-        _biz = datetime.fromtimestamp(_biz / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-    _last_upd = _m.get("last_update")
-    if isinstance(_last_upd, (int, float)):
-        _last_upd = datetime.fromtimestamp(_last_upd / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute(
-        """INSERT OR IGNORE INTO sporttery_matches
-        (match_id, official_match_id, business_date, match_number, kickoff,
-         weekday, league_id, league_name, home_team_id, home_team,
-         away_team_id, away_team, sell_status, match_status, remark,
-         had_single, hhad_single, available_pools, last_update, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        [_m.get("match_id"), _m.get("official_match_id", 0),
-         _biz, _m.get("match_number", ""), _kickoff,
-         _m.get("weekday", ""), _m.get("league_id", ""), _m.get("league_name", ""),
-         _m.get("home_team_id", 0), _m.get("home_team", ""),
-         _m.get("away_team_id", 0), _m.get("away_team", ""),
-         _m.get("sell_status", ""), _m.get("match_status", ""), _m.get("remark", ""),
-         _m.get("had_single", False), _m.get("hhad_single", False),
-         _m.get("available_pools", ""), _last_upd or _kickoff,
-         _m.get("source", "sporttery.cn")],
-    )
 
-def _transform_matches(conn, _m):
-    from datetime import datetime, timezone
-    kickoff = _m.get("kickoff")
-    if isinstance(kickoff, str) and kickoff.isdigit():
-        kickoff = datetime.fromtimestamp(int(kickoff) / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute(
-        "INSERT OR IGNORE INTO matches (match_id, competition, home_team, away_team, home_goals, away_goals, kickoff) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [_m.get("match_id"), _m.get("competition", ""), _m.get("home_team", ""),
-         _m.get("away_team", ""), _m.get("home_goals"), _m.get("away_goals"), kickoff],
-    )
+def _get_display_url() -> str:
+    """Get the display URL based on deployment environment."""
+    import os
+    if os.environ.get("SPACE_ID"):
+        return "Hugging Face Spaces"
+    host = os.environ.get("APP_HOST", "127.0.0.1")
+    port = os.environ.get("APP_PORT", "8502")
+    return f"{host}:{port}"
 
-def _transform_odds(conn, _m):
-    conn.execute(
-        "INSERT OR IGNORE INTO odds_snapshots (match_id, market, selection, odds, goal_line, captured_at) VALUES (?, ?, ?, ?, ?, ?)",
-        [_m.get("match_id"), _m.get("market", ""), _m.get("selection", ""),
-         _m.get("odds"), _m.get("goal_line", ""), _m.get("captured_at", "")],
-    )
-
-def _transform_models(conn, _m):
-    conn.execute(
-        "INSERT OR IGNORE INTO model_registry (model_id, version, model_type, metrics_json, artifact_path, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [_m.get("model_id"), _m.get("version", "1.0"), _m.get("model_type", ""),
-         _m.get("metrics_json", "{}"), _m.get("artifact_path", ""),
-         _m.get("status", "trained"), _m.get("created_at", "")],
-    )
-
-# 竞彩缓存
-_load_cache_if_empty(database, "sporttery_matches_cache.json", "sporttery_matches", _transform_sporttery)
-# 历史比赛
-_load_cache_if_empty(database, "matches_cache.json", "matches", _transform_matches)
-# 赔率
-_load_cache_if_empty(database, "odds_cache.json", "odds_snapshots", _transform_odds)
-# 模型
-_load_cache_if_empty(database, "models_cache.json", "model_registry", _transform_models)
 
 # ── Page Registry ────────────────────────────────────────────────
 SECTIONS = {
@@ -187,28 +123,6 @@ SECTIONS = {
 ALL_PAGES: dict[str, object] = {}
 for section_pages in SECTIONS.values():
     ALL_PAGES.update(section_pages)
-
-
-def _data_source_summary() -> str:
-    """Return a small local-cache status string without mutating live data."""
-    try:
-        dates = sporttery_live_service.dates()
-    except (OSError, RuntimeError, ValueError) as error:
-        logger.warning("Failed to read live dates: %s", error)
-        return "竞彩缓存不可读"
-    return f"竞彩缓存 {len(dates)} 日" if dates else "竞彩缓存待同步"
-
-
-def _get_display_url() -> str:
-    """Get the display URL based on deployment environment."""
-    import os
-    # Hugging Face Spaces
-    if os.environ.get("SPACE_ID"):
-        return "Hugging Face Spaces"
-    # Docker / local
-    host = os.environ.get("APP_HOST", "127.0.0.1")
-    port = os.environ.get("APP_PORT", "8502")
-    return f"{host}:{port}"
 
 
 # ── Sidebar ──────────────────────────────────────────────────────
