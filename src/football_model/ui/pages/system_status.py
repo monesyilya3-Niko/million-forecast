@@ -24,7 +24,11 @@ def _directory_size(path: Path) -> int:
 def render_system_status(settings: AppSettings, database: LocalDatabase) -> None:
     hero_pro("系统状态", "数据库健康、数据源状态、模型状态和系统信息。", "SYSTEM MONITOR", ["本地部署", "DuckDB", "Python " + sys.version.split()[0]])
 
-    disk = shutil.disk_usage(settings.project_root.drive + "\\")
+    try:
+        disk_path = settings.project_root.drive + "\\" if settings.project_root.drive else str(settings.project_root)
+        disk = shutil.disk_usage(disk_path)
+    except (OSError, ValueError):
+        disk = None
     healthy = database.health_check()
 
     # 数据库统计
@@ -134,7 +138,7 @@ def render_system_status(settings: AppSettings, database: LocalDatabase) -> None
     st.dataframe(paths, hide_index=True, use_container_width=True)
 
     sys_c1, sys_c2, sys_c3, sys_c4 = st.columns(4)
-    sys_c1.metric("D盘可用", f"{disk.free / 1024**3:.1f} GB")
+    sys_c1.metric("磁盘可用", f"{disk.free / 1024**3:.1f} GB" if disk else "N/A")
     sys_c2.metric("数据目录", f"{_directory_size(settings.data_dir) / 1024**2:.1f} MB")
     sys_c3.metric("Python", sys.version.split()[0])
     sys_c4.metric("模型数量", str(models_count))
