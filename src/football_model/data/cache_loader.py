@@ -15,7 +15,7 @@ from football_model.data import LocalDatabase
 
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_CACHE_DIR = Path(__file__).resolve().parents[3] / "data"
 
 
 def _load_cache_if_empty(
